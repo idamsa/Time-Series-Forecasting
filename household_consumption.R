@@ -407,6 +407,13 @@ test_forecast(actual = ts.weekly_noSeason, forecast.obj = forecast_arimaAuto, tr
 accuracy(forecast_arimaAuto, ts_test)
 summary(arimaModelAuto)
 
+
+# Table with error metrics for weekly
+
+errors_weekly_forecast <-  as.data.frame(rbind((accuracy(forecast_HWweekly,ts_testS)),(accuracy(forecast_lmWeekly,ts_testS)),(accuracy(forecast_arimaAuto, ts_test))))
+errors_weekly_forecast$model <- c("Holt Winters Weekly","Holt Winters Weekly","Linear Model Weekly","Linear Model Weekly","Arima Weekly","Arima Weekly")
+
+
 ################################################################## Forecasting the monthly
 
 # Decomposind the monthly
@@ -497,6 +504,11 @@ forecast_seasonArimaMonth <- forecast(ts_trainSM,model = seasonarima_month,h=11)
 #Check errors
 test_forecast(actual = ts.month, forecast.obj = forecast_seasonArimaMonth, train = ts_trainSM, test = ts_testSM)
 accuracy(forecats_seasonArimaMonth,ts_testSM)
+
+# Table with error metrics for monthly
+
+errors_monthly_forecast <-  as.data.frame(rbind((accuracy(forecast_HWMonthly,ts_testSM)),(accuracy(forecast_lmMonthly,ts_testSM)),(accuracy(forecats_seasonArimaMonth,ts_testSM))))
+errors_monthly_forecast$model <- c("Holt Winters Monthly","Holt Winters Monthly","Linear Model Monthly","Linear Model Monthly","Arima Monthly","Arima Monthly")
 
 
 ######################################## Forecasting by Submeters ###  
@@ -593,4 +605,136 @@ accuracy(forecast_S3HW, linearModelsSplitsSubmeters$Sub_metering_3$test)
 forecast_SRHW <- forecast(HW_SR, h=11, level=(90)) #90 % confidence
 test_forecast(actual = submeters_monthly[,4], forecast.obj = forecast_SRHW, test = linearModelsSplitsSubmeters$Sub_metering_remainder$test)
 accuracy(forecast_SRHW, linearModelsSplitsSubmeters$Sub_metering_remainder$test)
+
+# Build the ARIMA model for the 3 submeters + remainder
+
+# Take out the seasonal
+
+decomposed.submeters_monthly <- decompose(submeters_monthly)
+submeters_monthly_no_season <- submeters_monthly - decomposed.submeters_monthly$seasonal
+
+# Buil the test and train
+
+arimaSubmeters <- list()
+submeters <- c("Sub_metering_1","Sub_metering_2","Sub_metering_3","Sub_metering_remainder")
+j<-1
+for (i in submeters) {
+  arimaSubmeters[[i]] <- ts_split(submeters_monthly_no_season[,j])
+  j <- j+1
+  
+}
+
+# Building the train and test
+
+train_and_test_Submeters_no_season <-  list()
+for (i in submeters) {
+  train_and_test_Submeters_no_season <- arimaSubmeters
+  
+}
+
+#  Building the arima models
+
+arima_S1 <- auto.arima(train_and_test_Submeters_no_season$Sub_metering_1$train,trace=T) 
+arima_S2 <- auto.arima(train_and_test_Submeters_no_season$Sub_metering_2$train,trace=T)
+arima_S3 <- auto.arima(train_and_test_Submeters_no_season$Sub_metering_3$train,trace = T)
+arima_SR <- auto.arima(train_and_test_Submeters_no_season$Sub_metering_remainder$train,trace=T)
+
+# Forecasts ARIMA Submeters
+
+# S1 Kitchen 
+forecast_S1arima <- forecast(arima_S1, h=11, level=(90)) #90 % confidence
+test_forecast(actual = submeters_monthly_no_season[,1], forecast.obj = forecast_S1arima, test = arimaSubmeters$Sub_metering_1$test)
+accuracy(forecast_S1arima, arimaSubmeters$Sub_metering_1$test)
+
+# S2 Laundry Room 
+forecast_S2arima <- forecast(arima_S2, h=11, level=(90)) #90 % confidence
+test_forecast(actual = submeters_monthly_no_season[,2], forecast.obj = forecast_S2arima, test = arimaSubmeters$Sub_metering_2$test)
+accuracy(forecast_S2arima, arimaSubmeters$Sub_metering_2$test)
+
+# S3 Water Heater AC
+forecast_S3arima <- forecast(arima_S3, h=11, level=(90)) #90 % confidence
+test_forecast(actual = submeters_monthly_no_season[,3], forecast.obj = forecast_S3arima, test = arimaSubmeters$Sub_metering_3$test)
+accuracy(forecast_S3arima, arimaSubmeters$Sub_metering_3$test)
+
+# Submeter remaining
+forecast_SRarima <- forecast(arima_SR, h=11, level=(90)) #90 % confidence
+test_forecast(actual = submeters_monthly_no_season[,4], forecast.obj = forecast_SRarima, test = arimaSubmeters$Sub_metering_remainder$test)
+accuracy(forecast_SRarima, arimaSubmeters$Sub_metering_remainder$test)
+
+######################################################### Chosing the best models 1 for global power used 
+################# 1 for every submeter
+
+# For global power we chose the weekly Holt Winters
+# We will apply it to the next 6 months in order to forecats the consumption the add the price and time period
+
+fit_6months_weekly <- HoltWinters(ts.weekly)
+forecast_6months_weekly <- forecast(fit_6months_weekly,h=24,level=(90))
+forecast_6months_weekly_x <- ts(forecast_6months_weekly$x,start=(2010),end=c(2010,25),frequency = 52)
+plot(forecast_6months_weekly,main = "Forecast Cosumption 6 months December 2010 to June 2010",
+     xlab = "Date", ylab="Energy Consumption in Kilowatts")
+forecast_values_weekly <- as.data.frame(forecast_6months_weekly) %>%
+                          mutate(week =c(1:24),month= ifelse(week %in% 1:4,"January",(ifelse(week %in% 4:8 ,"February",
+                                                                          ifelse( week %in% 8:12,"March",(ifelse(week %in% 12:16 ,"April",
+                                                                                                                 ifelse( week %in% 16:20,"May","June")))))))) %>%
+                          mutate(price = paste(round(((`Point Forecast`/168) * 0.1390),0),"???"))
+write.csv(forecast_values_weekly,file="Values Forecast Global Active Power weekly first 6 months 2010")
+
+# Submeters
+
+# Submeter 1 LM
+
+ts.monthS1 <- ts(submeters_monthly[,1],
+                 frequency = 12,
+                 start=c(2007,1),
+                 end=c(2009,12))
+forecast_6months_S1Fit <- tslm(ts.monthS1 ~ trend + season)
+forecast_6months_S1 <- forecast(forecast_6months_S1Fit, h=6, level=(90)) #90 % confidence
+plot(forecast_6months_S1 ,main = "Forecast Cosumption 6 months December 2010 to June 2010 Submeter 1 Kitchen",
+     xlab = "Date", ylab="Energy Consumption in Kilowatts")
+
+forecast_values_monthly_S1 <- as.data.frame(forecast_6months_S1) %>%
+  mutate(month =c(1:6),month.name= ifelse(month == 1,"January",(ifelse(month ==2,"February",
+                                                                       ifelse( month == 3,"March",(ifelse(month ==  4 ,"April",
+                                                                                                          ifelse( month == 5,"May","June")))))))) %>%
+  mutate(price = paste(round(((`Point Forecast`*0.001) * 0.1390),0),"???"))
+write.csv(forecast_values_monthly_S1,file="Values Forecast Submeter 1 monthly first 6 months 2010")
+
+
+# submeter 2 HW
+
+ts.monthS2 <- ts(submeters_monthly[,2],
+                 frequency = 12,
+                 start=c(2007,1),
+                 end=c(2009,12))
+forecast_6months_S2Fit <- HoltWinters(ts.monthS2)
+forecast_6months_S2 <- forecast(forecast_6months_S2Fit, h=6, level=(90)) #90 % confidence
+plot(forecast_6months_S2 ,main = "Forecast Cosumption 6 months December 2010 to June 2010 Submeter 2 Laundry Room",
+     xlab = "Date", ylab="Energy Consumption in Kilowatts")
+
+forecast_values_monthly_S2 <- as.data.frame(forecast_6months_S2) %>%
+  mutate(month =c(1:6),month.name= ifelse(month == 1,"January",(ifelse(month ==2,"February",
+                                                                       ifelse( month == 3,"March",(ifelse(month ==  4 ,"April",
+                                                                                                          ifelse( month == 5,"May","June")))))))) %>%
+  mutate(price = paste(round(((`Point Forecast`*0.001) * 0.1390),0),"???"))
+write.csv(forecast_values_monthly_S2,file="Values Forecast Submeter 2 monthly first 6 months 2010")
+
+
+# Submeter 3 ARIMA
+
+ts.monthS3 <- ts(submeters_monthly[,3],
+                 frequency = 12,
+                 start=c(2007,1),
+                 end=c(2009,12))
+forecast_6months_S3Fit <- auto.arima(ts.monthS3)
+forecast_6months_S3 <- forecast(forecast_6months_S3Fit,h=6)
+plot(forecast_6months_S3 ,main = "Forecast Cosumption 6 months December 2010 to June 2010 Submeter 3 Heater and AC",
+     xlab = "Date", ylab="Energy Consumption in Kilowatts")
+
+forecast_values_monthly_S3 <- as.data.frame(forecast_6months_S3) %>%
+  mutate(month =c(1:6),month.name= ifelse(month == 1,"January",(ifelse(month ==2,"February",
+                                                                     ifelse( month == 3,"March",(ifelse(month ==  4 ,"April",
+                                                                                                            ifelse( month == 5,"May","June")))))))) %>%
+  mutate(price = paste(round(((`Point Forecast`*0.001) * 0.1390),0),"???"))
+write.csv(forecast_values_monthly_S3,file="Values Forecast Submeter 3 monthly first 6 months 2010")
+
 
