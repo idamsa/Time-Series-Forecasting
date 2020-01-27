@@ -676,7 +676,7 @@ forecast_values_weekly <- as.data.frame(forecast_6months_weekly) %>%
                           mutate(week =c(1:24),month= ifelse(week %in% 1:4,"January",(ifelse(week %in% 4:8 ,"February",
                                                                           ifelse( week %in% 8:12,"March",(ifelse(week %in% 12:16 ,"April",
                                                                                                                  ifelse( week %in% 16:20,"May","June")))))))) %>%
-                          mutate(price = paste(round(((`Point Forecast`/168) * 0.1390),0),"???"))
+                          mutate(price = paste(round(((`Point Forecast`/168) * 0.14),0),"???"))
 write.csv(forecast_values_weekly,file="Values Forecast Global Active Power weekly first 6 months 2010")
 
 # Submeters
